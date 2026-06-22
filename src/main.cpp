@@ -618,10 +618,12 @@ void drawHourglassFrame(Gfx &gfx, int centerX, int topY, int bottomY) {
   const int bottomLeft = centerX - 62;
   const int bottomRight = centerX + 62;
 
+  gfx.drawLine(topLeft, topY, topRight, topY, kGlass);
   gfx.drawLine(topLeft, topY, waistLeft, waistY, kGlass);
   gfx.drawLine(topRight, topY, waistRight, waistY, kGlass);
   gfx.drawLine(waistLeft, waistY, bottomLeft, bottomY, kGlass);
   gfx.drawLine(waistRight, waistY, bottomRight, bottomY, kGlass);
+  gfx.drawLine(bottomLeft, bottomY, bottomRight, bottomY, kGlass);
 }
 
 void drawPomodoroStaticRun() {
