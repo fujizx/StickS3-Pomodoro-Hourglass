@@ -34,6 +34,7 @@ constexpr int kHourglassSpriteY = 18;
 constexpr int kHourglassSpriteW = 135;
 constexpr int kHourglassSpriteH = 222;
 constexpr int kFallingGrainCount = 12;
+constexpr int kMaxBottomGrains = 1600;
 
 enum class Screen {
   Menu,
@@ -99,7 +100,15 @@ struct FallingGrain {
   float speed = 0.0f;
   bool active = false;
 };
+struct BottomGrain {
+  float x = 0.0f;
+  float y = 0.0f;
+  float vx = 0.0f;
+  float vy = 0.0f;
+  bool active = false;
+};
 FallingGrain fallingGrains[kFallingGrainCount];
+BottomGrain bottomGrains[kMaxBottomGrains];
 String lastClockText;
 AppConfig appConfig;
 WifiPortal wifiPortal;
@@ -527,6 +536,9 @@ void clearGrains() {
   for (auto &grain : fallingGrains) {
     grain.active = false;
   }
+  for (auto &grain : bottomGrains) {
+    grain.active = false;
+  }
   for (int y = kGrainMid; y < kGrainH; ++y) {
     for (int x = 0; x < kGrainW; ++x) {
       if (grainInside(x, y)) ++grainCapacity;
@@ -540,6 +552,22 @@ int activeFallingGrainCount() {
     if (grain.active) ++count;
   }
   return count;
+}
+
+bool bottomCellFree(int x, int y) {
+  return y >= kGrainMid && grainInside(x, y) && !grainGrid[y][x];
+}
+
+void rebuildBottomGrid() {
+  memset(grainGrid, 0, sizeof(grainGrid));
+  for (const auto &grain : bottomGrains) {
+    if (!grain.active) continue;
+    const int x = constrain(static_cast<int>(roundf(grain.x)), 0, kGrainW - 1);
+    const int y = constrain(static_cast<int>(roundf(grain.y)), kGrainMid, kGrainH - 1);
+    if (grainInside(x, y)) {
+      grainGrid[y][x] = true;
+    }
+  }
 }
 
 void spawnFallingGrain(float leanX) {
@@ -559,6 +587,7 @@ void spawnFallingGrain(float leanX) {
 }
 
 bool addBottomGrainAt(float spriteX, float spriteY) {
+  if (grainCount >= kMaxBottomGrains) return false;
   const int gridX = static_cast<int>((spriteX + kHourglassSpriteX - kGrainX0) / kGrainCell);
   const int gridY = constrain(static_cast<int>((spriteY + kHourglassSpriteY - kGrainY0) /
                                                kGrainCell),
@@ -574,6 +603,15 @@ bool addBottomGrainAt(float spriteX, float spriteY) {
       for (int offset : offsets) {
         const int x = gridX + offset;
         if (grainInside(x, y) && !grainGrid[y][x]) {
+          for (auto &grain : bottomGrains) {
+            if (grain.active) continue;
+            grain.x = x;
+            grain.y = y;
+            grain.vx = 0.0f;
+            grain.vy = 0.0f;
+            grain.active = true;
+            break;
+          }
           grainGrid[y][x] = true;
           ++grainCount;
           return true;
@@ -600,37 +638,59 @@ void updateFallingGrains(float leanX) {
 }
 
 void simulateGrains(float leanX) {
+  rebuildBottomGrid();
   const int preferred = leanX >= 0.0f ? 1 : -1;
   const int other = -preferred;
-  const int gravityBias = constrain(static_cast<int>(fabsf(leanX) * 100.0f), 0, 100);
 
-  for (int y = kGrainH - 2; y >= kGrainMid; --y) {
-    const int xStart = preferred > 0 ? kGrainW - 1 : 0;
-    const int xEnd = preferred > 0 ? -1 : kGrainW;
-    const int xStep = preferred > 0 ? -1 : 1;
-    for (int x = xStart; x != xEnd; x += xStep) {
-      if (!grainGrid[y][x]) continue;
+  for (auto &grain : bottomGrains) {
+    if (!grain.active) continue;
 
-      const bool strongTilt = gravityBias > 18;
-      const int candidates[7][2] = {
-          {strongTilt ? preferred : 0, 1},
-          {preferred, 1},
-          {0, 1},
-          {preferred, 0},
-          {preferred, 0},
-          {other, 1},
-          {other, 0},
-      };
+    int oldX = constrain(static_cast<int>(roundf(grain.x)), 0, kGrainW - 1);
+    int oldY = constrain(static_cast<int>(roundf(grain.y)), kGrainMid, kGrainH - 1);
+    if (grainInside(oldX, oldY)) grainGrid[oldY][oldX] = false;
 
-      for (const auto &candidate : candidates) {
-        const int nx = x + candidate[0];
-        const int ny = y + candidate[1];
-        if (grainInside(nx, ny) && !grainGrid[ny][nx]) {
-          grainGrid[y][x] = false;
-          grainGrid[ny][nx] = true;
-          break;
-        }
+    grain.vx = constrain(grain.vx + leanX * 0.22f, -1.8f, 1.8f);
+    grain.vy = constrain(grain.vy + 0.28f, -0.8f, 2.2f);
+
+    const int targetX = static_cast<int>(roundf(grain.x + grain.vx));
+    const int targetY = static_cast<int>(roundf(grain.y + grain.vy));
+    const int sideStep = fabsf(leanX) > 0.08f ? preferred : (random(0, 2) == 0 ? -1 : 1);
+
+    const int candidates[8][2] = {
+        {targetX, targetY},
+        {oldX, oldY + 1},
+        {oldX + sideStep, oldY + 1},
+        {oldX + other, oldY + 1},
+        {oldX + sideStep, oldY},
+        {oldX + preferred, oldY + 2},
+        {oldX, oldY},
+        {oldX + other, oldY},
+    };
+
+    bool moved = false;
+    for (const auto &candidate : candidates) {
+      const int nx = candidate[0];
+      const int ny = candidate[1];
+      if (bottomCellFree(nx, ny)) {
+        grain.x = nx;
+        grain.y = ny;
+        moved = nx != oldX || ny != oldY;
+        break;
       }
+    }
+
+    if (!moved) {
+      grain.vx *= -0.18f;
+      grain.vy *= -0.10f;
+    } else {
+      grain.vx *= 0.86f;
+      grain.vy *= 0.92f;
+    }
+
+    const int newX = constrain(static_cast<int>(roundf(grain.x)), 0, kGrainW - 1);
+    const int newY = constrain(static_cast<int>(roundf(grain.y)), kGrainMid, kGrainH - 1);
+    if (grainInside(newX, newY)) {
+      grainGrid[newY][newX] = true;
     }
   }
 }
