@@ -16,7 +16,7 @@ constexpr uint32_t kUiFrameDelayMs = 20;
 constexpr uint32_t kPomodoroFrameMs = 60;
 constexpr uint32_t kSeaFrameMs = 45;
 constexpr uint8_t kDisplayBrightness = 90;
-constexpr uint8_t kPomodoroDoneVolume = 28;
+constexpr uint8_t kPomodoroDoneVolume = 77;
 constexpr float kShakeThreshold = 1.6f;
 constexpr float kInvertThreshold = -0.70f;
 constexpr float kLeanDeadzone = 0.08f;
@@ -860,6 +860,7 @@ void drawPomodoroStaticRun() {
     hourglassCanvas.createSprite(kHourglassSpriteW, kHourglassSpriteH);
   }
   hourglassCanvas.fillScreen(TFT_BLACK);
+  drawTopGrains(hourglassCanvas, grainCapacity, 0.0f);
   drawHourglassFrame(hourglassCanvas, centerX - kHourglassSpriteX,
                      kHourglassTopY - kHourglassSpriteY,
                      kHourglassBottomY - kHourglassSpriteY);
