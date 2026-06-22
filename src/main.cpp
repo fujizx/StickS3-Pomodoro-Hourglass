@@ -387,7 +387,6 @@ void drawClockChrome(const String &subtitle, int rotation) {
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
   display.drawString(subtitle, w / 2, 18);
-  drawFooter("B: Menu", "");
 }
 
 int clockRotationFromImu() {
@@ -399,15 +398,15 @@ int clockRotationFromImu() {
   if (fabsf(ax) >= fabsf(ay)) {
     return ax < 0.0f ? 0 : 2;
   }
-  return ay > 0.0f ? 3 : 1;
+  return ay > 0.0f ? 1 : 3;
 }
 
 void drawPortraitClock(const String &subtitle, const char *hhText, const char *mmText,
-                       const char *ssText, int rotation) {
+                       const char *ssText, int rotation, const String &oldClockText,
+                       bool canAnimate) {
   M5.Display.setRotation(rotation);
   auto &display = M5.Display;
   const int w = display.width();
-  const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
   drawStatusBar();
@@ -416,18 +415,43 @@ void drawPortraitClock(const String &subtitle, const char *hhText, const char *m
   display.setTextSize(1);
   display.drawString(subtitle, w / 2, 17);
 
-  display.setTextDatum(middle_center);
-  display.setTextColor(TFT_WHITE, TFT_BLACK);
-  display.setTextSize(5);
-  display.drawString(hhText, w / 2, 61);
-  display.drawString(mmText, w / 2, 123);
-  display.drawString(ssText, w / 2, 185);
+  const int cardX = (w - 110) / 2;
+  const int cardW = 110;
+  const int cardH = 58;
+  const int yHh = 34;
+  const int yMm = 99;
+  const int ySs = 164;
 
-  display.setTextSize(1);
+  if (!canAnimate) {
+    drawFlipCard(cardX, yHh, cardW, cardH, hhText);
+    drawFlipCard(cardX, yMm, cardW, cardH, mmText);
+    drawFlipCard(cardX, ySs, cardW, cardH, ssText);
+  } else {
+    const String oldHh = oldClockText.substring(0, 2);
+    const String oldMm = oldClockText.substring(3, 5);
+    const String oldSs = oldClockText.substring(6, 8);
+    if (oldHh != hhText) {
+      animateFlipCard(cardX, yHh, cardW, cardH, oldHh, hhText);
+    } else {
+      drawFlipCard(cardX, yHh, cardW, cardH, hhText);
+    }
+    if (oldMm != mmText) {
+      animateFlipCard(cardX, yMm, cardW, cardH, oldMm, mmText);
+    } else {
+      drawFlipCard(cardX, yMm, cardW, cardH, mmText);
+    }
+    if (oldSs != ssText) {
+      animateFlipCard(cardX, ySs, cardW, cardH, oldSs, ssText);
+    } else {
+      drawFlipCard(cardX, ySs, cardW, cardH, ssText);
+    }
+  }
+
+  display.setTextDatum(middle_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString(":", w / 2, 92);
-  display.drawString(":", w / 2, 154);
-  drawFooter("B: Menu", "");
+  display.setTextSize(1);
+  display.drawString(":", w / 2, 96);
+  display.drawString(":", w / 2, 161);
 }
 
 void drawPomodoroSelect() {
@@ -692,11 +716,11 @@ bool addBottomGrainAt(float spriteX, float spriteY) {
   return false;
 }
 
-void updateFallingGrains(float gravityX, float gravityY) {
+void updateFallingGrains(float gravityX) {
   const int bottomY = kHourglassBottomY - kHourglassSpriteY;
   for (auto &grain : fallingGrains) {
     if (!grain.active) continue;
-    grain.y += grain.speed * max(0.12f, gravityY);
+    grain.y += grain.speed;
     grain.x += gravityX * grain.speed * 0.75f;
     if (grain.y >= bottomY - 8 ||
         !hourglassInsideSprite(static_cast<int>(grain.x), static_cast<int>(grain.y), 2)) {
@@ -966,7 +990,7 @@ void drawPomodoroRun(bool force = false) {
   display.setTextSize(1);
   display.drawString(remainText, centerX, 6);
 
-  updateFallingGrains(liquidLeanX, liquidLeanY);
+  updateFallingGrains(liquidLeanX);
   simulateGrains(liquidLeanX, liquidLeanY);
   int targetTransferred = static_cast<int>(grainCapacity * progress);
   if (elapsed > 0 && progress < 1.0f) {
@@ -1266,20 +1290,20 @@ void drawClock(bool force = false) {
   if (!force && clockText == lastClockText) return;
 
   const String oldClockText = lastClockText;
-  const bool canAnimate = !force && !portrait && oldClockText.length() == 8;
+  const bool canAnimate = !force && oldClockText.length() == 8;
   lastClockText = clockText;
 
   if (portrait) {
-    drawPortraitClock(subtitle, hhText, mmText, ssText, rotation);
+    drawPortraitClock(subtitle, hhText, mmText, ssText, rotation, oldClockText, canAnimate);
     return;
   }
 
   drawClockChrome(subtitle, rotation);
 
   if (!canAnimate) {
-    drawFlipCard(4, 43, 74, 72, hhText);
-    drawFlipCard(83, 43, 74, 72, mmText);
-    drawFlipCard(162, 43, 74, 72, ssText);
+    drawFlipCard(2, 41, 77, 78, hhText);
+    drawFlipCard(81, 41, 77, 78, mmText);
+    drawFlipCard(160, 41, 77, 78, ssText);
     return;
   }
 
@@ -1288,21 +1312,21 @@ void drawClock(bool force = false) {
   const String oldSs = oldClockText.substring(6, 8);
 
   if (oldHh != hhText) {
-    animateFlipCard(4, 43, 74, 72, oldHh, hhText);
+    animateFlipCard(2, 41, 77, 78, oldHh, hhText);
   } else {
-    drawFlipCard(4, 43, 74, 72, hhText);
+    drawFlipCard(2, 41, 77, 78, hhText);
   }
 
   if (oldMm != mmText) {
-    animateFlipCard(83, 43, 74, 72, oldMm, mmText);
+    animateFlipCard(81, 41, 77, 78, oldMm, mmText);
   } else {
-    drawFlipCard(83, 43, 74, 72, mmText);
+    drawFlipCard(81, 41, 77, 78, mmText);
   }
 
   if (oldSs != ssText) {
-    animateFlipCard(162, 43, 74, 72, oldSs, ssText);
+    animateFlipCard(160, 41, 77, 78, oldSs, ssText);
   } else {
-    drawFlipCard(162, 43, 74, 72, ssText);
+    drawFlipCard(160, 41, 77, 78, ssText);
   }
 }
 
@@ -1392,12 +1416,16 @@ void setup() {
     LOGI("ws", "text=%s", text.c_str());
   });
 
-  drawMenu();
+  screen = Screen::Clock;
+  lastClockText = "";
+  lastClockRotation = -1;
+  drawClock(true);
   wifiPortal.begin(settings.deviceName);
   timeSync.begin(settings);
   wsClient.begin(settings.wsHost, settings.wsPort, settings.wsPath);
 
-  drawMenu();
+  lastClockText = "";
+  drawClock(true);
 }
 
 void loop() {
