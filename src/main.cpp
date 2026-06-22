@@ -519,20 +519,28 @@ void spawnFallingGrain(float leanX) {
   }
 }
 
-bool addBottomGrainNear(float spriteX, float leanX) {
+bool addBottomGrainAt(float spriteX, float spriteY) {
   const int gridX = static_cast<int>((spriteX + kHourglassSpriteX - kGrainX0) / kGrainCell);
-  const int leanOffset = static_cast<int>(leanX * 4.0f);
-  for (int y = kGrainMid; y < kGrainH; ++y) {
+  const int gridY = constrain(static_cast<int>((spriteY + kHourglassSpriteY - kGrainY0) /
+                                               kGrainCell),
+                              kGrainMid, kGrainH - 1);
+  for (int dy = 0; dy < kGrainH; ++dy) {
+    const int yDown = gridY + dy;
+    const int yUp = gridY - dy;
+    const int ys[] = {yDown, yUp};
+    for (int y : ys) {
+      if (y < kGrainMid || y >= kGrainH) continue;
     for (int radius = 0; radius <= 6; ++radius) {
       const int offsets[] = {0, radius, -radius};
       for (int offset : offsets) {
-        const int x = gridX + leanOffset + offset;
+        const int x = gridX + offset;
         if (grainInside(x, y) && !grainGrid[y][x]) {
           grainGrid[y][x] = true;
           ++grainCount;
           return true;
         }
       }
+    }
     }
   }
   return false;
@@ -546,7 +554,7 @@ void updateFallingGrains(float leanX) {
     grain.x += leanX * 1.8f;
     if (grain.y >= bottomY - 8 ||
         !hourglassInsideSprite(static_cast<int>(grain.x), static_cast<int>(grain.y), 2)) {
-      addBottomGrainNear(grain.x, leanX);
+      addBottomGrainAt(grain.x, grain.y);
       grain.active = false;
     }
   }
@@ -591,7 +599,7 @@ void simulateGrains(float leanX) {
 template <typename Gfx>
 void drawTopGrains(Gfx &gfx, int remainingGrains, float leanX) {
   constexpr uint16_t kBlue = 0x04FF;
-  constexpr uint16_t kBlueLight = 0x5DFF;
+  constexpr uint16_t kBlueDark = 0x039B;
   if (remainingGrains <= 0) return;
 
   int drawn = 0;
@@ -605,7 +613,7 @@ void drawTopGrains(Gfx &gfx, int remainingGrains, float leanX) {
       const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
       if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
       gfx.fillRect(px, py, kGrainCell, kGrainCell,
-                   ((x + y) % 7 == 0) ? kBlueLight : kBlue);
+                   ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
       ++drawn;
     }
   }
@@ -722,7 +730,7 @@ void drawPomodoroRun(bool force = false) {
   float ay = 0.0f;
   float az = 0.0f;
   if (readAccel(ax, ay, az)) {
-    const float rawLeanX = applyLeanDeadzone(constrain((pomodoroBaseAx - ax) * 1.8f,
+    const float rawLeanX = applyLeanDeadzone(constrain((ax - pomodoroBaseAx) * 1.8f,
                                                        -1.0f, 1.0f));
     const float rawLeanY = applyLeanDeadzone(constrain((az - pomodoroBaseAz) * 1.4f,
                                                        -1.0f, 1.0f));
