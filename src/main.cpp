@@ -27,6 +27,10 @@ constexpr int kGrainMid = kGrainH / 2;
 constexpr int kGrainX0 = 10;
 constexpr int kGrainY0 = 36;
 constexpr int kGrainCenter = kGrainW / 2;
+constexpr int kHourglassSpriteX = 6;
+constexpr int kHourglassSpriteY = 20;
+constexpr int kHourglassSpriteW = 124;
+constexpr int kHourglassSpriteH = 218;
 
 enum class Screen {
   Menu,
@@ -85,6 +89,7 @@ BatteryMeter battery;
 HttpClient httpClient;
 WsClient wsClient;
 PomodoroHistory pomodoroHistory;
+M5Canvas hourglassCanvas(&M5.Display);
 
 void drawPomodoroPrompt();
 void returnToMenu();
@@ -410,9 +415,9 @@ int lerpInt(int a, int b, float t) {
 
 int grainHalfWidth(int y) {
   if (y < kGrainMid) {
-    return map(y, 0, kGrainMid - 1, 27, 3);
+    return map(y, 0, kGrainMid - 1, 23, 2);
   }
-  return map(y, kGrainMid, kGrainH - 1, 3, 27);
+  return map(y, kGrainMid, kGrainH - 1, 2, 23);
 }
 
 bool grainInside(int x, int y) {
@@ -475,10 +480,9 @@ void simulateGrains(float leanX) {
   }
 }
 
-void drawTopGrains(float progress, float leanX) {
-  auto &display = M5.Display;
+template <typename Gfx>
+void drawTopGrains(Gfx &gfx, float progress, float leanX) {
   constexpr uint16_t kBlue = 0x04FF;
-  constexpr uint16_t kBlueDark = 0x039B;
   constexpr uint16_t kBlueLight = 0x5DFF;
   const float topLevel = constrain(1.0f - progress, 0.0f, 1.0f);
   if (topLevel <= 0.01f) return;
@@ -491,44 +495,44 @@ void drawTopGrains(float progress, float leanX) {
       const int surface = baseSurface + static_cast<int>((x - kGrainCenter) * leanX * 0.20f);
       if (y < surface) continue;
       if (((x + y + millis() / 180) % 5) == 0 && y < surface + 3) continue;
-      const int px = kGrainX0 + x * kGrainCell;
-      const int py = kGrainY0 + y * kGrainCell;
-      display.fillRect(px, py, kGrainCell, kGrainCell,
-                       ((x + y) % 7 == 0) ? kBlueLight : kBlue);
+      const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
+      const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
+      gfx.fillRect(px, py, kGrainCell, kGrainCell,
+                   ((x + y) % 7 == 0) ? kBlueLight : kBlue);
     }
   }
 }
 
-void drawBottomGrains() {
-  auto &display = M5.Display;
+template <typename Gfx>
+void drawBottomGrains(Gfx &gfx) {
   constexpr uint16_t kBlue = 0x04FF;
   constexpr uint16_t kBlueDark = 0x039B;
   for (int y = kGrainMid; y < kGrainH; ++y) {
     for (int x = 0; x < kGrainW; ++x) {
       if (!grainGrid[y][x]) continue;
-      const int px = kGrainX0 + x * kGrainCell;
-      const int py = kGrainY0 + y * kGrainCell;
-      display.fillRect(px, py, kGrainCell, kGrainCell,
-                       ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
+      const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
+      const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
+      gfx.fillRect(px, py, kGrainCell, kGrainCell,
+                   ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
     }
   }
 }
 
-void drawFallingStream(int centerX, float progress, float leanX) {
-  auto &display = M5.Display;
+template <typename Gfx>
+void drawFallingStream(Gfx &gfx, int centerX, float progress, float leanX) {
   constexpr uint16_t kBlueLight = 0x5DFF;
-  const int waistY = kGrainY0 + kGrainMid * kGrainCell;
+  const int waistY = kGrainY0 + kGrainMid * kGrainCell - kHourglassSpriteY;
   if (progress > 0.01f && progress < 0.99f) {
     const int drip = 18 + static_cast<int>(sin(millis() * 0.020f) * 5.0f);
     const int drift = static_cast<int>(leanX * 10.0f);
     for (int i = 0; i < drip; i += 5) {
-      display.fillCircle(centerX + drift + (i % 2), waistY - 6 + i, 2, kBlueLight);
+      gfx.fillCircle(centerX + drift + (i % 2), waistY - 6 + i, 2, kBlueLight);
     }
   }
 }
 
-void drawHourglassFrame(int centerX, int topY, int bottomY) {
-  auto &display = M5.Display;
+template <typename Gfx>
+void drawHourglassFrame(Gfx &gfx, int centerX, int topY, int bottomY) {
   constexpr uint16_t kGlass = 0xBDF7;
   const int waistY = (topY + bottomY) / 2;
   const int topLeft = centerX - 50;
@@ -538,13 +542,13 @@ void drawHourglassFrame(int centerX, int topY, int bottomY) {
   const int bottomLeft = centerX - 50;
   const int bottomRight = centerX + 50;
 
-  display.drawLine(topLeft, topY, waistLeft, waistY, kGlass);
-  display.drawLine(topRight, topY, waistRight, waistY, kGlass);
-  display.drawLine(waistLeft, waistY, bottomLeft, bottomY, kGlass);
-  display.drawLine(waistRight, waistY, bottomRight, bottomY, kGlass);
-  display.drawRoundRect(topLeft - 4, topY - 8, topRight - topLeft + 8, 10, 4, TFT_WHITE);
-  display.drawRoundRect(bottomLeft - 4, bottomY - 2, bottomRight - bottomLeft + 8, 10, 4, TFT_WHITE);
-  display.drawCircle(centerX, waistY, 4, kGlass);
+  gfx.drawLine(topLeft, topY, waistLeft, waistY, kGlass);
+  gfx.drawLine(topRight, topY, waistRight, waistY, kGlass);
+  gfx.drawLine(waistLeft, waistY, bottomLeft, bottomY, kGlass);
+  gfx.drawLine(waistRight, waistY, bottomRight, bottomY, kGlass);
+  gfx.drawRoundRect(topLeft - 4, topY - 8, topRight - topLeft + 8, 10, 4, TFT_WHITE);
+  gfx.drawRoundRect(bottomLeft - 4, bottomY - 2, bottomRight - bottomLeft + 8, 10, 4, TFT_WHITE);
+  gfx.drawCircle(centerX, waistY, 4, kGlass);
 }
 
 void drawPomodoroStaticRun() {
@@ -555,7 +559,15 @@ void drawPomodoroStaticRun() {
   const int centerX = w / 2;
 
   display.fillScreen(TFT_BLACK);
-  drawHourglassFrame(centerX, kHourglassTopY, kHourglassBottomY);
+  if (!hourglassCanvas.width()) {
+    hourglassCanvas.setColorDepth(16);
+    hourglassCanvas.createSprite(kHourglassSpriteW, kHourglassSpriteH);
+  }
+  hourglassCanvas.fillScreen(TFT_BLACK);
+  drawHourglassFrame(hourglassCanvas, centerX - kHourglassSpriteX,
+                     kHourglassTopY - kHourglassSpriteY,
+                     kHourglassBottomY - kHourglassSpriteY);
+  hourglassCanvas.pushSprite(kHourglassSpriteX, kHourglassSpriteY);
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
@@ -653,15 +665,23 @@ void drawPomodoroRun(bool force = false) {
   display.setTextSize(1);
   display.drawString(remainText, centerX, 6);
 
-  display.fillRect(6, kHourglassTopY - 10, w - 12, kHourglassBottomY - kHourglassTopY + 24, TFT_BLACK);
   const int targetGrains = static_cast<int>(grainCapacity * progress);
   int grainsToAdd = min(8, max(0, targetGrains - grainCount));
   while (grainsToAdd-- > 0) addGrainAtNeck();
   simulateGrains(liquidLeanX);
-  drawTopGrains(progress, liquidLeanX);
-  drawFallingStream(centerX, progress, liquidLeanX);
-  drawBottomGrains();
-  drawHourglassFrame(centerX, kHourglassTopY, kHourglassBottomY);
+
+  if (!hourglassCanvas.width()) {
+    hourglassCanvas.setColorDepth(16);
+    hourglassCanvas.createSprite(kHourglassSpriteW, kHourglassSpriteH);
+  }
+  hourglassCanvas.fillScreen(TFT_BLACK);
+  drawTopGrains(hourglassCanvas, progress, liquidLeanX);
+  drawFallingStream(hourglassCanvas, centerX - kHourglassSpriteX, progress, liquidLeanX);
+  drawBottomGrains(hourglassCanvas);
+  drawHourglassFrame(hourglassCanvas, centerX - kHourglassSpriteX,
+                     kHourglassTopY - kHourglassSpriteY,
+                     kHourglassBottomY - kHourglassSpriteY);
+  hourglassCanvas.pushSprite(kHourglassSpriteX, kHourglassSpriteY);
 }
 
 void drawPomodoroPrompt() {
