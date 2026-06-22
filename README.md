@@ -19,8 +19,8 @@
 
 当前 `src/main.cpp` 已经有一个可操作菜单：
 
-- 菜单第 1 项：骰子
-- 菜单第 2 项：时钟
+- 菜单第 1 项：时钟
+- 菜单第 2 项：骰子
 
 按键规则：
 
@@ -34,6 +34,32 @@
 
 - Wi-Fi 和 NTP 正常时，显示网络校准后的真实时间
 - 未联网或 NTP 未同步时，回退显示从设备启动开始累计的运行时间
+- 当前时钟使用翻页钟样式，按小时 / 分钟 / 秒分成 3 个卡片
+- 时间变化时，对变化的卡片播放一个短翻页过渡
+- 时钟每秒重画一次，主循环按约 50Hz 轮询按键、Wi-Fi、WebSocket 和电池状态
+
+### 显示亮度和刷新策略
+
+当前亮度在 `src/main.cpp` 里配置：
+
+```cpp
+constexpr uint8_t kDisplayBrightness = 160;
+M5.Display.setBrightness(kDisplayBrightness);
+```
+
+亮度范围是 `0-255`。运行时也可以读取：
+
+```cpp
+M5.Display.getBrightness();
+```
+
+启动日志会输出当前显示配置：
+
+```text
+display brightness=160 ui_loop=50Hz clock_redraw=1Hz
+```
+
+这里的 `ui_loop=50Hz` 是程序主循环/交互轮询频率，`clock_redraw=1Hz` 是时钟页面重画频率。ST7789 面板自身的硬件扫描刷新率没有在当前 M5Unified 抽象里作为通用运行时数值暴露出来，所以项目里按“应用重画频率”来控制功耗和观感。
 
 ## 基础框架能力
 
