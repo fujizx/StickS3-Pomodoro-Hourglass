@@ -319,7 +319,6 @@ void drawDieFace(int n) {
     pip(size - inset, mid);
   }
 
-  drawFooter("B: Menu", "");
 }
 
 void rollDie() {
@@ -484,7 +483,6 @@ void drawPomodoroSelect() {
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("B: Next  A: Start", w / 2, h - 8);
 }
 
 void drawPomodoroMenu() {
@@ -515,7 +513,6 @@ void drawPomodoroMenu() {
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("B: Next  A: OK", w / 2, h - 8);
 }
 
 String recordTimeText(uint32_t epoch) {
@@ -576,7 +573,6 @@ void drawPomodoroRecords() {
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("B: Page  A: Back", w / 2, h - 8);
 }
 
 void fillLiquidPolygon(int x1, int y1, int x2, int y2, int x3, int y3, int x4, int y4,
@@ -736,8 +732,8 @@ void updateFallingGrains(float gravityX) {
     if (!grain.active) continue;
     grain.y += grain.speed;
     grain.x += gravityX * grain.speed * 0.75f;
-    if (grain.y >= bottomY - 8 ||
-        !hourglassInsideSprite(static_cast<int>(grain.x), static_cast<int>(grain.y), 2)) {
+    if (grain.y >= bottomY - kSandInset - 1 ||
+        !hourglassInsideSprite(static_cast<int>(grain.x), static_cast<int>(grain.y), kSandInset)) {
       addBottomGrainAt(grain.x, grain.y);
       grain.active = false;
     }
@@ -907,7 +903,6 @@ void drawPomodoroStaticRun() {
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("Flip 180 for options", centerX, h - 4);
 }
 
 void calibratePomodoroGravity() {
@@ -1084,7 +1079,6 @@ void drawPomodoroPrompt() {
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("B: Next  A: OK", w / 2, h - 8);
 }
 
 void calibrateSeaGravity() {
@@ -1148,19 +1142,21 @@ void drawSea(bool force = false) {
   seaCanvas.fillScreen(TFT_BLACK);
 
   const int centerX = seaCanvas.width() / 2;
-  const int centerY = 132;
+  constexpr int waterCenterY = 132;
+  const float down = max(seaGravityY, 0.18f);
+  const float slope = constrain(seaGravityX / down, -1.35f, 1.35f);
   for (int x = 0; x < seaCanvas.width(); ++x) {
-    const float wave = sinf(seaWavePhase + x * 0.115f) * 2.2f;
+    const float wave = sinf(seaWavePhase + x * 0.115f) * 2.0f;
+    const float surfaceY = waterCenterY - slope * (x - centerX) + wave;
     for (int y = 25; y <= 226; ++y) {
       if (!bottleInside(x, y)) continue;
-      const float side = seaGravityX * (x - centerX) +
-                         seaGravityY * (y - centerY) + wave;
-      if (side >= 0.0f) {
+      const float depth = y - surfaceY;
+      if (depth >= 0.0f) {
         const uint16_t color = ((x * 5 + y + static_cast<int>(seaWavePhase * 8)) % 17 == 0)
                                    ? kWater
                                    : kWaterDark;
         seaCanvas.drawPixel(x, y, color);
-      } else if (fabsf(side) <= 1.8f) {
+      } else if (depth >= -1.8f) {
         seaCanvas.drawPixel(x, y, kWaterLight);
       }
     }
@@ -1170,9 +1166,7 @@ void drawSea(bool force = false) {
   seaCanvas.setTextDatum(top_center);
   seaCanvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
   seaCanvas.setTextSize(1);
-  seaCanvas.drawString("A: Calibrate", seaCanvas.width() / 2, 5);
   seaCanvas.setTextDatum(bottom_center);
-  seaCanvas.drawString("B: Menu", seaCanvas.width() / 2, seaCanvas.height() - 4);
   seaCanvas.pushSprite(0, 0);
 }
 
@@ -1244,7 +1238,6 @@ void drawImuCal() {
 
   display.setTextDatum(bottom_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString("A: Capture  B: Menu", w / 2, h - 8);
 }
 
 void captureImuCalStep() {
