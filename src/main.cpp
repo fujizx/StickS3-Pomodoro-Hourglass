@@ -31,6 +31,7 @@ constexpr int kHourglassSpriteX = 0;
 constexpr int kHourglassSpriteY = 18;
 constexpr int kHourglassSpriteW = 135;
 constexpr int kHourglassSpriteH = 222;
+constexpr int kRainDropCount = 12;
 
 enum class Screen {
   Menu,
@@ -81,6 +82,14 @@ float liquidLeanY = 0.0f;
 bool grainGrid[kGrainH][kGrainW] = {};
 int grainCount = 0;
 int grainCapacity = 0;
+struct RainDrop {
+  float x = 0.0f;
+  float y = 0.0f;
+  float speed = 0.0f;
+  uint8_t length = 0;
+  bool active = false;
+};
+RainDrop rainDrops[kRainDropCount];
 String lastClockText;
 AppConfig appConfig;
 WifiPortal wifiPortal;
@@ -453,9 +462,42 @@ void clearGrains() {
   memset(grainGrid, 0, sizeof(grainGrid));
   grainCount = 0;
   grainCapacity = 0;
+  for (auto &drop : rainDrops) {
+    drop.active = false;
+  }
   for (int y = kGrainMid; y < kGrainH; ++y) {
     for (int x = 0; x < kGrainW; ++x) {
       if (grainInside(x, y)) ++grainCapacity;
+    }
+  }
+}
+
+void spawnRainDrop(float leanX) {
+  const int waistY = kGrainY0 + kGrainMid * kGrainCell - kHourglassSpriteY;
+  const int centerX = kGrainX0 + kGrainCenter * kGrainCell - kHourglassSpriteX;
+  for (auto &drop : rainDrops) {
+    if (drop.active) continue;
+    drop.x = centerX + leanX * 11.0f + random(-3, 4);
+    drop.y = waistY - random(6, 16);
+    drop.speed = random(32, 58) / 10.0f;
+    drop.length = random(5, 10);
+    drop.active = true;
+    return;
+  }
+}
+
+void updateRainDrops(float leanX, float progress) {
+  const int endY = kGrainY0 + kGrainH * kGrainCell - kHourglassSpriteY - 6;
+  if (progress > 0.01f && progress < 0.99f && random(0, 100) < 68) {
+    spawnRainDrop(leanX);
+  }
+
+  for (auto &drop : rainDrops) {
+    if (!drop.active) continue;
+    drop.y += drop.speed;
+    drop.x += leanX * 2.2f + random(-2, 3) * 0.18f;
+    if (drop.y > endY) {
+      drop.active = false;
     }
   }
 }
@@ -549,13 +591,18 @@ void drawBottomGrains(Gfx &gfx) {
 
 template <typename Gfx>
 void drawFallingStream(Gfx &gfx, int centerX, float progress, float leanX) {
-  constexpr uint16_t kBlueLight = 0x5DFF;
-  const int waistY = kGrainY0 + kGrainMid * kGrainCell - kHourglassSpriteY;
-  if (progress > 0.01f && progress < 0.99f) {
-    const int drip = 18 + static_cast<int>(sin(millis() * 0.020f) * 5.0f);
-    const int drift = static_cast<int>(leanX * 24.0f);
-    for (int i = 0; i < drip; i += 5) {
-      gfx.fillCircle(centerX + drift + (i % 2), waistY - 6 + i, 2, kBlueLight);
+  (void)centerX;
+  (void)progress;
+  (void)leanX;
+  constexpr uint16_t kTailColors[] = {0x0128, 0x0211, 0x02BA, 0x047F, 0x5DFF};
+  for (const auto &drop : rainDrops) {
+    if (!drop.active) continue;
+    for (int j = drop.length - 1; j >= 0; --j) {
+      const int x = static_cast<int>(drop.x);
+      const int y = static_cast<int>(drop.y) - j * 3;
+      const int colorIndex = map(drop.length - 1 - j, 0, drop.length - 1, 0, 4);
+      const int radius = (j == 0) ? 2 : 1;
+      gfx.fillCircle(x, y, radius, kTailColors[colorIndex]);
     }
   }
 }
@@ -695,6 +742,7 @@ void drawPomodoroRun(bool force = false) {
   int grainsToAdd = min(8, max(0, targetGrains - grainCount));
   while (grainsToAdd-- > 0) addGrainAtNeck(liquidLeanX);
   simulateGrains(liquidLeanX);
+  updateRainDrops(liquidLeanX, progress);
 
   if (!hourglassCanvas.width()) {
     hourglassCanvas.setColorDepth(16);
