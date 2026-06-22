@@ -33,7 +33,7 @@ constexpr int kHourglassSpriteX = 0;
 constexpr int kHourglassSpriteY = 18;
 constexpr int kHourglassSpriteW = 135;
 constexpr int kHourglassSpriteH = 222;
-constexpr int kFallingGrainCount = 12;
+constexpr int kFallingGrainCount = 24;
 constexpr int kMaxBottomGrains = 1600;
 
 enum class Screen {
@@ -680,7 +680,7 @@ void spawnFallingGrain(float leanX) {
 }
 
 bool addBottomGrainAt(float spriteX, float spriteY) {
-  if (grainCount >= kMaxBottomGrains) return false;
+  if (grainCount >= grainCapacity) return false;
   const int gridX = static_cast<int>((spriteX + kHourglassSpriteX - kGrainX0) / kGrainCell);
   const int gridY = constrain(static_cast<int>((spriteY + kHourglassSpriteY - kGrainY0) /
                                                kGrainCell),
@@ -696,21 +696,32 @@ bool addBottomGrainAt(float spriteX, float spriteY) {
       for (int offset : offsets) {
         const int x = gridX + offset;
         if (grainInside(x, y) && !grainGrid[y][x]) {
-          for (auto &grain : bottomGrains) {
-            if (grain.active) continue;
-            grain.x = x;
-            grain.y = y;
-            grain.vx = 0.0f;
-            grain.vy = 0.0f;
-            grain.active = true;
-            break;
-          }
           grainGrid[y][x] = true;
           ++grainCount;
           return true;
         }
       }
     }
+    }
+  }
+  return false;
+}
+
+bool addAnyBottomGrain() {
+  if (grainCount >= grainCapacity) return false;
+  for (int y = kGrainH - 1; y >= kGrainMid; --y) {
+    const int half = grainHalfWidth(y);
+    for (int radius = 0; radius <= half; ++radius) {
+      const int offsets[] = {0, radius, -radius};
+      for (int offset : offsets) {
+        if (radius == 0 && offset != 0) continue;
+        const int x = kGrainCenter + offset;
+        if (bottomCellFree(x, y)) {
+          grainGrid[y][x] = true;
+          ++grainCount;
+          return true;
+        }
+      }
     }
   }
   return false;
@@ -731,66 +742,34 @@ void updateFallingGrains(float gravityX) {
 }
 
 void simulateGrains(float gravityX, float gravityY) {
-  rebuildBottomGrid();
+  (void)gravityY;
   const int preferred = gravityX >= 0.0f ? 1 : -1;
   const int other = -preferred;
-  const float tilt = constrain(fabsf(gravityX), 0.0f, 1.0f);
-  const float down = constrain(gravityY, 0.03f, 1.0f);
-  const bool strongTilt = tilt > 0.55f;
 
-  for (auto &grain : bottomGrains) {
-    if (!grain.active) continue;
-
-    int oldX = constrain(static_cast<int>(roundf(grain.x)), 0, kGrainW - 1);
-    int oldY = constrain(static_cast<int>(roundf(grain.y)), kGrainMid, kGrainH - 1);
-    if (grainInside(oldX, oldY)) grainGrid[oldY][oldX] = false;
-
-    grain.vx = constrain(grain.vx + gravityX * 0.36f, -2.4f, 2.4f);
-    grain.vy = constrain(grain.vy + down * 0.30f, -0.8f, 2.2f);
-
-    const int targetX = static_cast<int>(roundf(grain.x + grain.vx));
-    const int targetY = static_cast<int>(roundf(grain.y + grain.vy));
-    const int sideStep = fabsf(gravityX) > 0.08f ? preferred : (random(0, 2) == 0 ? -1 : 1);
-
-    const int candidates[8][2] = {
-        {targetX, targetY},
-        {oldX + (strongTilt ? preferred : 0), oldY + (strongTilt ? 0 : 1)},
-        {oldX + sideStep, oldY + 1},
-        {oldX + preferred, oldY},
-        {oldX + preferred, oldY + 1},
-        {oldX, oldY + 1},
-        {oldX, oldY},
-        {oldX + other, oldY},
-    };
-
-    bool moved = false;
-    for (const auto &candidate : candidates) {
-      const int nx = candidate[0];
-      const int ny = candidate[1];
-      if (bottomCellFree(nx, ny)) {
-        grain.x = nx;
-        grain.y = ny;
-        moved = nx != oldX || ny != oldY;
-        break;
+  for (int y = kGrainH - 2; y >= kGrainMid; --y) {
+    const int xStart = preferred > 0 ? kGrainW - 1 : 0;
+    const int xEnd = preferred > 0 ? -1 : kGrainW;
+    const int xStep = preferred > 0 ? -1 : 1;
+    for (int x = xStart; x != xEnd; x += xStep) {
+      if (!grainGrid[y][x]) continue;
+      const int candidates[4][2] = {
+          {x, y + 1},
+          {x + preferred, y + 1},
+          {x + other, y + 1},
+          {x + preferred, y},
+      };
+      for (const auto &candidate : candidates) {
+        const int nx = candidate[0];
+        const int ny = candidate[1];
+        if (bottomCellFree(nx, ny)) {
+          grainGrid[y][x] = false;
+          grainGrid[ny][nx] = true;
+          break;
+        }
       }
-    }
-
-    if (!moved) {
-      grain.vx *= -0.18f;
-      grain.vy *= -0.10f;
-    } else {
-      grain.vx *= 0.86f;
-      grain.vy *= 0.92f;
-    }
-
-    const int newX = constrain(static_cast<int>(roundf(grain.x)), 0, kGrainW - 1);
-    const int newY = constrain(static_cast<int>(roundf(grain.y)), kGrainMid, kGrainH - 1);
-    if (grainInside(newX, newY)) {
-      grainGrid[newY][newX] = true;
     }
   }
 }
-
 template <typename Gfx>
 void drawTopGrains(Gfx &gfx, int remainingGrains, float leanX) {
   constexpr uint16_t kBlue = 0x04FF;
@@ -801,19 +780,23 @@ void drawTopGrains(Gfx &gfx, int remainingGrains, float leanX) {
   for (int y = kGrainMid - 1; y >= 0 && drawn < remainingGrains; --y) {
     const int half = grainHalfWidth(y);
     const int rowShift = static_cast<int>((kGrainMid - y) * leanX * 0.22f);
-    for (int dx = -half; dx <= half && drawn < remainingGrains; ++dx) {
-      const int x = kGrainCenter + dx + rowShift;
-      if (!grainInside(x, y)) continue;
-      const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
-      const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
-      if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
-      gfx.fillRect(px, py, kGrainCell, kGrainCell,
-                   ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
-      ++drawn;
+    for (int radius = 0; radius <= half && drawn < remainingGrains; ++radius) {
+      const int order[3] = {0, -radius, radius};
+      for (int j = 0; j < 3 && drawn < remainingGrains; ++j) {
+        const int dx = order[j];
+        if (radius == 0 && j > 0) continue;
+        const int x = kGrainCenter + dx + rowShift;
+        if (!grainInside(x, y)) continue;
+        const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
+        const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
+        if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
+        gfx.fillRect(px, py, kGrainCell, kGrainCell,
+                     ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
+        ++drawn;
+      }
     }
   }
 }
-
 template <typename Gfx>
 void drawBottomGrains(Gfx &gfx) {
   constexpr uint16_t kBlue = 0x04FF;
@@ -992,17 +975,30 @@ void drawPomodoroRun(bool force = false) {
 
   updateFallingGrains(liquidLeanX);
   simulateGrains(liquidLeanX, liquidLeanY);
-  int targetTransferred = static_cast<int>(grainCapacity * progress);
+  int targetTransferred = progress >= 1.0f
+                              ? grainCapacity
+                              : static_cast<int>(grainCapacity * progress);
   if (elapsed > 0 && progress < 1.0f) {
     targetTransferred = max(1, targetTransferred);
   }
   int fallingCount = activeFallingGrainCount();
-  int grainsToRelease = min(2, max(0, targetTransferred - grainCount - fallingCount));
+  const int releaseLimit = progress >= 1.0f ? kFallingGrainCount : 2;
+  int grainsToRelease = min(releaseLimit,
+                            max(0, targetTransferred - grainCount - fallingCount));
   while (grainsToRelease-- > 0) {
     spawnFallingGrain(liquidLeanX);
   }
+  if (progress >= 1.0f) {
+    for (auto &grain : fallingGrains) {
+      if (!grain.active) continue;
+      addBottomGrainAt(grain.x, grain.y);
+      grain.active = false;
+    }
+    while (grainCount < grainCapacity && addAnyBottomGrain()) {
+    }
+  }
   fallingCount = activeFallingGrainCount();
-  const int topGrains = max(0, grainCapacity - grainCount - fallingCount);
+  const int topGrains = progress >= 1.0f ? 0 : max(0, grainCapacity - grainCount - fallingCount);
 
   if (!hourglassCanvas.width()) {
     hourglassCanvas.setColorDepth(16);
