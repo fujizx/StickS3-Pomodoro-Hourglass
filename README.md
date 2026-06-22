@@ -32,8 +32,103 @@
 
 时钟说明：
 
-- 当前时钟显示的是从设备启动开始累计的运行时间
-- 后续可以再扩展成 Wi-Fi NTP 自动校时，或者读取 RTC 时间
+- Wi-Fi 和 NTP 正常时，显示网络校准后的真实时间
+- 未联网或 NTP 未同步时，回退显示从设备启动开始累计的运行时间
+
+## 基础框架能力
+
+项目已经拆出一组基础模块，放在 `src/core/`：
+
+- `AppLog`：串口日志输出，支持 DEBUG / INFO / WARN / ERROR
+- `AppConfig`：使用 ESP32 Preferences/NVS 保存应用配置到 Flash
+- `WifiPortal`：首次启动自动进入手机配网，后续自动连接已保存 Wi-Fi
+- `TimeSync`：联网后通过 NTP 自动校时
+- `NetClient`：HTTP GET / POST JSON 和 WebSocket 客户端封装
+- `BatteryMeter`：读取并显示电池百分比
+
+### Wi-Fi 首次手机配网
+
+首次没有保存 Wi-Fi 时，设备会开启一个临时热点：
+
+```text
+StickS3-Setup
+```
+
+手机连接这个热点后，按页面提示选择家里的 Wi-Fi 并输入密码。配置成功后，ESP32 会把 Wi-Fi 信息保存到 Flash/NVS，后续开机自动连接。
+
+如果 180 秒内没有完成配网，设备会继续以离线模式启动，骰子和菜单仍可用。
+
+### 自动重连
+
+联网后如果 Wi-Fi 断开，`WifiPortal::loop()` 会定期调用重连逻辑。主循环里已经接入：
+
+```cpp
+wifiPortal.loop();
+```
+
+### Flash 保存配置
+
+应用配置通过 `AppConfig` 保存，当前默认项包括：
+
+- 设备名：`StickS3`
+- 时区：`CST-8`
+- NTP：`pool.ntp.org`、`ntp.aliyun.com`
+- HTTP base URL
+- WebSocket host / port / path
+
+Wi-Fi SSID 和密码由 ESP32 Wi-Fi/WiFiManager 机制保存到 NVS。
+
+### NTP 自动校时
+
+联网后 `TimeSync` 会自动等待 NTP 同步。默认时区是中国时间：
+
+```text
+CST-8
+```
+
+时钟页面优先显示 NTP 时间；如果还未同步，则显示离线运行时间。
+
+### HTTP / WebSocket
+
+HTTP 封装在 `HttpClient`：
+
+```cpp
+String response;
+httpClient.get("/api/ping", response);
+httpClient.postJson("/api/data", "{\"hello\":\"stick\"}", response);
+```
+
+WebSocket 封装在 `WsClient`：
+
+```cpp
+wsClient.onText([](const String &text) {
+  LOGI("ws", "text=%s", text.c_str());
+});
+wsClient.sendText("hello");
+```
+
+默认没有配置远端地址，所以 WebSocket 不会主动连接。后面需要接服务端时，改 `AppConfig` 的默认配置或做一个设置页面即可。
+
+### 电池显示
+
+菜单、骰子、时钟页面顶部都会显示：
+
+- Wi-Fi 状态：`WiFi` / `Offline`
+- 电池百分比：`BAT xx%`
+
+### 日志输出
+
+串口波特率为 `115200`。打开串口监视器：
+
+```powershell
+pio device monitor
+```
+
+日志格式类似：
+
+```text
+[      1234] INFO  wifi       connected ssid=xxx ip=192.168.1.10
+```
 
 ## 先用 M5Burner 验证连接
 

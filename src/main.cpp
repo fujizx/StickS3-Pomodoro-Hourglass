@@ -1,6 +1,13 @@
 #include <Arduino.h>
 #include <M5Unified.h>
 
+#include "core/AppConfig.h"
+#include "core/AppLog.h"
+#include "core/BatteryMeter.h"
+#include "core/NetClient.h"
+#include "core/TimeSync.h"
+#include "core/WifiPortal.h"
+
 namespace {
 constexpr uint32_t kRollCooldownMs = 650;
 constexpr uint32_t kClockRefreshMs = 250;
@@ -25,6 +32,12 @@ uint32_t lastClockDrawMs = 0;
 uint32_t bootMs = 0;
 int dieValue = 1;
 bool imuReady = false;
+AppConfig appConfig;
+WifiPortal wifiPortal;
+TimeSync timeSync;
+BatteryMeter battery;
+HttpClient httpClient;
+WsClient wsClient;
 
 void drawFooter(const char *left, const char *right) {
   auto &display = M5.Display;
@@ -40,22 +53,37 @@ void drawFooter(const char *left, const char *right) {
   display.drawString(right, w - 6, h - 4);
 }
 
+void drawStatusBar() {
+  auto &display = M5.Display;
+  const int w = display.width();
+
+  battery.loop();
+  display.fillRect(0, 0, w, 13, TFT_BLACK);
+  display.setTextSize(1);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextDatum(top_left);
+  display.drawString(wifiPortal.connected() ? "WiFi" : "Offline", 4, 2);
+  display.setTextDatum(top_right);
+  display.drawString(battery.text(), w - 4, 2);
+}
+
 void drawMenu() {
   auto &display = M5.Display;
   const int w = display.width();
 
   display.fillScreen(TFT_BLACK);
+  drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
-  display.drawString("STICK S3", w / 2, 12);
+  display.drawString("STICK S3", w / 2, 16);
 
   display.setTextSize(1);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString("Menu", w / 2, 38);
+  display.drawString("Menu", w / 2, 42);
 
   for (int i = 0; i < kMenuCount; ++i) {
-    const int y = 64 + i * 38;
+    const int y = 68 + i * 38;
     const bool selected = i == menuIndex;
     const uint16_t bg = selected ? TFT_WHITE : TFT_BLACK;
     const uint16_t fg = selected ? TFT_BLACK : TFT_WHITE;
@@ -82,10 +110,11 @@ void drawDieFace(int n) {
   const int mid = size / 2;
 
   display.fillScreen(TFT_BLACK);
+  drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("Shake or press A", w / 2, 6);
+  display.drawString("Shake or press A", w / 2, 16);
 
   display.fillRoundRect(x, y, size, size, 10, TFT_WHITE);
 
@@ -116,6 +145,7 @@ void rollDie() {
 
   lastRollMs = now;
   dieValue = random(1, 7);
+  LOGI("dice", "roll=%d", dieValue);
   drawDieFace(dieValue);
 }
 
@@ -135,26 +165,34 @@ void drawClock(bool force = false) {
   if (!force && now - lastClockDrawMs < kClockRefreshMs) return;
   lastClockDrawMs = now;
 
-  const uint32_t seconds = (now - bootMs) / 1000;
-  const uint32_t hh = seconds / 3600;
-  const uint32_t mm = (seconds / 60) % 60;
-  const uint32_t ss = seconds % 60;
-
   char timeText[16];
-  snprintf(timeText, sizeof(timeText), "%02lu:%02lu:%02lu",
-           static_cast<unsigned long>(hh),
-           static_cast<unsigned long>(mm),
-           static_cast<unsigned long>(ss));
+  String subtitle;
+  if (timeSync.ready()) {
+    const String ntpTime = timeSync.timeText();
+    strlcpy(timeText, ntpTime.c_str(), sizeof(timeText));
+    subtitle = timeSync.dateText();
+  } else {
+    const uint32_t seconds = (now - bootMs) / 1000;
+    const uint32_t hh = seconds / 3600;
+    const uint32_t mm = (seconds / 60) % 60;
+    const uint32_t ss = seconds % 60;
+    snprintf(timeText, sizeof(timeText), "%02lu:%02lu:%02lu",
+             static_cast<unsigned long>(hh),
+             static_cast<unsigned long>(mm),
+             static_cast<unsigned long>(ss));
+    subtitle = wifiPortal.connected() ? "NTP waiting" : "Offline uptime";
+  }
 
   auto &display = M5.Display;
   const int w = display.width();
   const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
+  drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("Clock since boot", w / 2, 12);
+  display.drawString(subtitle, w / 2, 18);
 
   display.setTextDatum(middle_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -182,6 +220,9 @@ void returnToMenu() {
 }  // namespace
 
 void setup() {
+  AppLog::begin(115200);
+  LOGI("boot", "starting");
+
   auto cfg = M5.config();
   M5.begin(cfg);
 
@@ -190,12 +231,31 @@ void setup() {
   M5.Display.setRotation(1);
   M5.Display.setBrightness(160);
   imuReady = M5.Imu.getType() != m5::imu_none;
+  battery.begin();
+
+  if (!appConfig.begin()) {
+    LOGE("config", "preferences init failed");
+  }
+  const AppSettings &settings = appConfig.settings();
+  httpClient.setBaseUrl(settings.httpBaseUrl);
+  wsClient.onText([](const String &text) {
+    LOGI("ws", "text=%s", text.c_str());
+  });
+
+  drawMenu();
+  wifiPortal.begin(settings.deviceName);
+  timeSync.begin(settings);
+  wsClient.begin(settings.wsHost, settings.wsPort, settings.wsPath);
 
   drawMenu();
 }
 
 void loop() {
   M5.update();
+  wifiPortal.loop();
+  timeSync.loop(wifiPortal.connected());
+  battery.loop();
+  wsClient.loop();
 
   if (screen == Screen::Menu) {
     if (didShake()) {
