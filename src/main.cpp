@@ -848,7 +848,7 @@ void drawPomodoroRun(bool force = false) {
   float ay = 0.0f;
   float az = 0.0f;
   if (readAccel(ax, ay, az)) {
-    const float rawLeanX = applyLeanDeadzone(constrain((ax - pomodoroBaseAx) * 1.8f,
+    const float rawLeanX = applyLeanDeadzone(constrain((pomodoroBaseAy - ay) * 1.8f,
                                                        -1.0f, 1.0f));
     const float rawLeanY = applyLeanDeadzone(constrain((az - pomodoroBaseAz) * 1.4f,
                                                        -1.0f, 1.0f));
@@ -1015,7 +1015,7 @@ void drawSea(bool force = false) {
   float ay = 0.0f;
   float az = 0.0f;
   if (readAccel(ax, ay, az)) {
-    const float rawLeanX = applyLeanDeadzone(constrain((ax - seaBaseAx) * 1.45f,
+    const float rawLeanX = applyLeanDeadzone(constrain((seaBaseAy - ay) * 1.45f,
                                                        -1.0f, 1.0f));
     seaLeanX = seaLeanX * 0.72f + rawLeanX * 0.28f;
   }
