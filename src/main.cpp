@@ -37,6 +37,7 @@ constexpr int kHourglassSpriteW = 135;
 constexpr int kHourglassSpriteH = 222;
 constexpr int kFallingGrainCount = 24;
 constexpr int kMaxBottomGrains = 1700;
+constexpr int kSandInset = 1;
 
 enum class Screen {
   Menu,
@@ -672,7 +673,7 @@ void spawnFallingGrain(float leanX) {
     if (grain.active) continue;
     const int x = centerX + static_cast<int>(leanX * 7.0f) + random(-2, 3);
     const int y = waistY - random(1, 5);
-    if (!hourglassInsideSprite(x, y, 3)) continue;
+    if (!hourglassInsideSprite(x, y, kSandInset)) continue;
     grain.x = x;
     grain.y = y;
     grain.speed = random(26, 42) / 10.0f;
@@ -812,7 +813,7 @@ void drawTopGrains(Gfx &gfx, int remainingGrains, float gravityX, float gravityY
       if (!grainInside(x, y)) continue;
       const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
       const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
-      if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
+      if (!hourglassInsideSprite(px + 1, py + 1, kSandInset)) continue;
       const float centerBias = -fabsf(static_cast<float>(x - kGrainCenter)) * 0.015f;
       const float roughness = static_cast<float>((x * 17 + y * 11) % 7) * 0.01f;
       cells[cellCount++] = {static_cast<int8_t>(x), static_cast<int8_t>(y),
@@ -844,7 +845,7 @@ void drawBottomGrains(Gfx &gfx) {
       if (!grainGrid[y][x]) continue;
       const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
       const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
-      if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
+      if (!hourglassInsideSprite(px + 1, py + 1, kSandInset)) continue;
       gfx.fillRect(px, py, kGrainCell, kGrainCell,
                    ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
     }
@@ -861,7 +862,7 @@ void drawFallingStream(Gfx &gfx, int centerX, float progress, float leanX) {
     if (!grain.active) continue;
     const int x = static_cast<int>(grain.x);
     const int y = static_cast<int>(grain.y);
-    if (!hourglassInsideSprite(x, y, 3)) continue;
+    if (!hourglassInsideSprite(x, y, kSandInset)) continue;
     gfx.fillRect(x - 1, y - 1, kGrainCell, kGrainCell, kBlueLight);
   }
 }
