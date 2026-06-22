@@ -225,7 +225,6 @@ void drawMenu() {
   M5.Display.setRotation(0);
   auto &display = M5.Display;
   const int w = display.width();
-  const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
   drawTopStatus();
@@ -234,12 +233,20 @@ void drawMenu() {
   display.setTextSize(2);
   display.drawString("STICK S3", w / 2, 22);
 
-  display.setTextSize(1);
-  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString("Menu", w / 2, 48);
+  constexpr int visibleCount = 3;
+  int firstIndex = menuIndex - visibleCount + 1;
+  if (firstIndex < 0) firstIndex = 0;
+  if (firstIndex > kMenuCount - visibleCount) firstIndex = max(0, kMenuCount - visibleCount);
 
-  for (int i = 0; i < kMenuCount; ++i) {
-    const int y = 74 + i * 42;
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString(String(menuIndex + 1) + "/" + String(kMenuCount), w / 2, 49);
+
+  for (int row = 0; row < visibleCount; ++row) {
+    const int i = firstIndex + row;
+    if (i >= kMenuCount) break;
+    const int y = 68 + row * 46;
     const bool selected = i == menuIndex;
     const uint16_t bg = selected ? TFT_CYAN : TFT_BLACK;
     const uint16_t fg = selected ? TFT_BLACK : TFT_WHITE;
@@ -251,10 +258,11 @@ void drawMenu() {
     display.drawString(kMenuItems[i], w / 2, y + 16);
   }
 
-  display.setTextDatum(bottom_center);
+  display.setTextDatum(middle_right);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("B: Next  A: OK", w / 2, h - 8);
+  if (firstIndex > 0) display.drawString("^", w - 5, 68);
+  if (firstIndex + visibleCount < kMenuCount) display.drawString("v", w - 5, 68 + (visibleCount - 1) * 46 + 16);
 }
 
 bool readAccel(float &ax, float &ay, float &az) {
