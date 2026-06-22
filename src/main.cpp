@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Arduino.h>
 #include <M5Unified.h>
 
@@ -742,59 +744,95 @@ void updateFallingGrains(float gravityX) {
 }
 
 void simulateGrains(float gravityX, float gravityY) {
-  (void)gravityY;
-  const int preferred = gravityX >= 0.0f ? 1 : -1;
-  const int other = -preferred;
+  if (fabsf(gravityX) < 0.04f && gravityY < 0.04f) {
+    gravityX = 0.0f;
+    gravityY = 1.0f;
+  }
+  const int horizontal = gravityX >= 0.0f ? 1 : -1;
+  const bool sideDominant = fabsf(gravityX) > gravityY;
 
-  for (int y = kGrainH - 2; y >= kGrainMid; --y) {
-    const int xStart = preferred > 0 ? kGrainW - 1 : 0;
-    const int xEnd = preferred > 0 ? -1 : kGrainW;
-    const int xStep = preferred > 0 ? -1 : 1;
-    for (int x = xStart; x != xEnd; x += xStep) {
-      if (!grainGrid[y][x]) continue;
-      const int candidates[4][2] = {
-          {x, y + 1},
-          {x + preferred, y + 1},
-          {x + other, y + 1},
-          {x + preferred, y},
-      };
-      for (const auto &candidate : candidates) {
-        const int nx = candidate[0];
-        const int ny = candidate[1];
-        if (bottomCellFree(nx, ny)) {
+  for (int pass = 0; pass < 2; ++pass) {
+    const int yStart = sideDominant ? kGrainMid : kGrainH - 2;
+    const int yEnd = sideDominant ? kGrainH : kGrainMid - 1;
+    const int yStep = sideDominant ? 1 : -1;
+    const int xStart = horizontal > 0 ? kGrainW - 1 : 0;
+    const int xEnd = horizontal > 0 ? -1 : kGrainW;
+    const int xStep = horizontal > 0 ? -1 : 1;
+
+    for (int y = yStart; y != yEnd; y += yStep) {
+      for (int x = xStart; x != xEnd; x += xStep) {
+        if (!grainGrid[y][x]) continue;
+        const int candidates[5][2] = {
+            {x + horizontal, y},
+            {x + horizontal, y + 1},
+            {x, y + 1},
+            {x - horizontal, y + 1},
+            {x - horizontal, y},
+        };
+        int best = -1;
+        float bestScore = -1000.0f;
+        for (int i = 0; i < 5; ++i) {
+          const int nx = candidates[i][0];
+          const int ny = candidates[i][1];
+          if (!bottomCellFree(nx, ny)) continue;
+          const float score = (nx - x) * gravityX + (ny - y) * max(gravityY, 0.12f);
+          if (score > bestScore) {
+            bestScore = score;
+            best = i;
+          }
+        }
+        if (best >= 0 && bestScore > 0.02f) {
           grainGrid[y][x] = false;
-          grainGrid[ny][nx] = true;
-          break;
+          grainGrid[candidates[best][1]][candidates[best][0]] = true;
         }
       }
     }
   }
 }
+struct TopGrainCell {
+  int8_t x;
+  int8_t y;
+  float score;
+};
+
 template <typename Gfx>
-void drawTopGrains(Gfx &gfx, int remainingGrains, float leanX) {
+void drawTopGrains(Gfx &gfx, int remainingGrains, float gravityX, float gravityY) {
   constexpr uint16_t kBlue = 0x04FF;
   constexpr uint16_t kBlueDark = 0x039B;
   if (remainingGrains <= 0) return;
 
-  int drawn = 0;
-  for (int y = kGrainMid - 1; y >= 0 && drawn < remainingGrains; --y) {
-    const int half = grainHalfWidth(y);
-    const int rowShift = static_cast<int>((kGrainMid - y) * leanX * 0.22f);
-    for (int radius = 0; radius <= half && drawn < remainingGrains; ++radius) {
-      const int order[3] = {0, -radius, radius};
-      for (int j = 0; j < 3 && drawn < remainingGrains; ++j) {
-        const int dx = order[j];
-        if (radius == 0 && j > 0) continue;
-        const int x = kGrainCenter + dx + rowShift;
-        if (!grainInside(x, y)) continue;
-        const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
-        const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
-        if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
-        gfx.fillRect(px, py, kGrainCell, kGrainCell,
-                     ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
-        ++drawn;
-      }
+  if (fabsf(gravityX) < 0.04f && gravityY < 0.04f) {
+    gravityX = 0.0f;
+    gravityY = 1.0f;
+  }
+  static TopGrainCell cells[kMaxBottomGrains];
+  int cellCount = 0;
+  for (int y = 0; y < kGrainMid; ++y) {
+    for (int x = 0; x < kGrainW; ++x) {
+      if (!grainInside(x, y)) continue;
+      const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
+      const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
+      if (!hourglassInsideSprite(px + 1, py + 1, 3)) continue;
+      const float centerBias = -fabsf(static_cast<float>(x - kGrainCenter)) * 0.015f;
+      const float roughness = static_cast<float>((x * 17 + y * 11) % 7) * 0.01f;
+      cells[cellCount++] = {static_cast<int8_t>(x), static_cast<int8_t>(y),
+                            (x - kGrainCenter) * gravityX +
+                                (y - kGrainMid) * max(gravityY, 0.0f) +
+                                centerBias + roughness};
     }
+  }
+  std::sort(cells, cells + cellCount, [](const TopGrainCell &a, const TopGrainCell &b) {
+    return a.score > b.score;
+  });
+
+  const int drawnCount = min(remainingGrains, cellCount);
+  for (int i = 0; i < drawnCount; ++i) {
+    const int x = cells[i].x;
+    const int y = cells[i].y;
+    const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
+    const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
+    gfx.fillRect(px, py, kGrainCell, kGrainCell,
+                 ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
   }
 }
 template <typename Gfx>
@@ -860,7 +898,7 @@ void drawPomodoroStaticRun() {
     hourglassCanvas.createSprite(kHourglassSpriteW, kHourglassSpriteH);
   }
   hourglassCanvas.fillScreen(TFT_BLACK);
-  drawTopGrains(hourglassCanvas, grainCapacity, 0.0f);
+  drawTopGrains(hourglassCanvas, grainCapacity, 0.0f, 1.0f);
   drawHourglassFrame(hourglassCanvas, centerX - kHourglassSpriteX,
                      kHourglassTopY - kHourglassSpriteY,
                      kHourglassBottomY - kHourglassSpriteY);
@@ -1006,7 +1044,7 @@ void drawPomodoroRun(bool force = false) {
     hourglassCanvas.createSprite(kHourglassSpriteW, kHourglassSpriteH);
   }
   hourglassCanvas.fillScreen(TFT_BLACK);
-  drawTopGrains(hourglassCanvas, topGrains, liquidLeanX);
+  drawTopGrains(hourglassCanvas, topGrains, liquidLeanX, liquidLeanY);
   drawFallingStream(hourglassCanvas, centerX - kHourglassSpriteX, progress, liquidLeanX);
   drawBottomGrains(hourglassCanvas);
   drawHourglassFrame(hourglassCanvas, centerX - kHourglassSpriteX,
