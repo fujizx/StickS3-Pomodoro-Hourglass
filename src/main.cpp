@@ -163,34 +163,29 @@ bool didShake() {
   return fabsf(magnitude - 1.0f) > kShakeThreshold;
 }
 
-void drawFlipCard(int x, int y, int width, int height, const char *label, const char *value) {
+void drawFlipCard(int x, int y, int width, int height, const char *value) {
   auto &display = M5.Display;
   constexpr uint16_t kCardTop = 0x3186;
   constexpr uint16_t kCardBottom = 0x18C3;
   constexpr uint16_t kCardBorder = 0x5AEB;
 
-  display.fillRoundRect(x, y, width, height, 6, kCardBottom);
-  display.fillRoundRect(x, y, width, height / 2, 6, kCardTop);
-  display.drawRoundRect(x, y, width, height, 6, kCardBorder);
+  display.fillRoundRect(x, y, width, height, 8, kCardBottom);
+  display.fillRoundRect(x, y, width, height / 2, 8, kCardTop);
+  display.drawRoundRect(x, y, width, height, 8, kCardBorder);
   display.drawFastHLine(x + 4, y + height / 2, width - 8, TFT_BLACK);
   display.drawFastHLine(x + 4, y + height / 2 + 1, width - 8, kCardBorder);
 
-  display.setTextDatum(top_center);
-  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.setTextSize(1);
-  display.drawString(label, x + width / 2, y - 13);
-
   display.setTextDatum(middle_center);
   display.setTextColor(TFT_WHITE, kCardTop);
-  display.setTextSize(3);
+  display.setTextSize(4);
   display.drawString(value, x + width / 2, y + height / 2 + 1);
 }
 
-void animateFlipCard(int x, int y, int width, int height, const char *label,
-                     const String &fromValue, const char *toValue) {
+void animateFlipCard(int x, int y, int width, int height, const String &fromValue,
+                     const char *toValue) {
   auto &display = M5.Display;
 
-  drawFlipCard(x, y, width, height, label, fromValue.c_str());
+  drawFlipCard(x, y, width, height, fromValue.c_str());
   for (int i = 0; i < 4; ++i) {
     const int fold = (height / 2) - i * 6;
     display.fillRect(x + 4, y + 4, width - 8, height / 2 - fold, TFT_BLACK);
@@ -198,7 +193,7 @@ void animateFlipCard(int x, int y, int width, int height, const char *label,
     delay(18);
   }
 
-  drawFlipCard(x, y, width, height, label, toValue);
+  drawFlipCard(x, y, width, height, toValue);
   for (int i = 0; i < 3; ++i) {
     display.drawFastHLine(x + 4, y + height / 2 + i * 2, width - 8, TFT_DARKGREY);
     delay(16);
@@ -254,9 +249,9 @@ void drawClock(bool force = false) {
   drawClockChrome(subtitle);
 
   if (!canAnimate) {
-    drawFlipCard(12, 52, 64, 56, "HOUR", hhText);
-    drawFlipCard(88, 52, 64, 56, "MIN", mmText);
-    drawFlipCard(164, 52, 64, 56, "SEC", ssText);
+    drawFlipCard(4, 43, 74, 72, hhText);
+    drawFlipCard(83, 43, 74, 72, mmText);
+    drawFlipCard(162, 43, 74, 72, ssText);
     return;
   }
 
@@ -265,21 +260,21 @@ void drawClock(bool force = false) {
   const String oldSs = oldClockText.substring(6, 8);
 
   if (oldHh != hhText) {
-    animateFlipCard(12, 52, 64, 56, "HOUR", oldHh, hhText);
+    animateFlipCard(4, 43, 74, 72, oldHh, hhText);
   } else {
-    drawFlipCard(12, 52, 64, 56, "HOUR", hhText);
+    drawFlipCard(4, 43, 74, 72, hhText);
   }
 
   if (oldMm != mmText) {
-    animateFlipCard(88, 52, 64, 56, "MIN", oldMm, mmText);
+    animateFlipCard(83, 43, 74, 72, oldMm, mmText);
   } else {
-    drawFlipCard(88, 52, 64, 56, "MIN", mmText);
+    drawFlipCard(83, 43, 74, 72, mmText);
   }
 
   if (oldSs != ssText) {
-    animateFlipCard(164, 52, 64, 56, "SEC", oldSs, ssText);
+    animateFlipCard(162, 43, 74, 72, oldSs, ssText);
   } else {
-    drawFlipCard(164, 52, 64, 56, "SEC", ssText);
+    drawFlipCard(162, 43, 74, 72, ssText);
   }
 }
 
