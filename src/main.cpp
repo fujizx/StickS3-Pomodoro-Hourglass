@@ -17,6 +17,7 @@ constexpr uint32_t kClockRefreshMs = 1000;
 constexpr uint32_t kUiFrameDelayMs = 20;
 constexpr uint32_t kPomodoroFrameMs = 60;
 constexpr uint32_t kSeaFrameMs = 45;
+constexpr bool kEnableNetwork = false;
 constexpr uint8_t kDisplayBrightness = 90;
 constexpr uint8_t kPomodoroDoneVolume = 77;
 constexpr float kShakeThreshold = 1.6f;
@@ -53,11 +54,7 @@ enum class Screen {
 };
 
 constexpr const char *kMenuItems[] = {
-    "Clock",
     "Pomodoro",
-    "Dice",
-    "Sea",
-    "IMU Cal",
 };
 constexpr int kMenuCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
 constexpr uint16_t kPomodoroMinutes[] = {15, 25, 50};
@@ -833,18 +830,43 @@ void drawTopGrains(Gfx &gfx, int remainingGrains, float gravityX, float gravityY
   }
 }
 template <typename Gfx>
-void drawBottomGrains(Gfx &gfx) {
+void drawBottomGrains(Gfx &gfx, float gravityX, float gravityY) {
   constexpr uint16_t kBlue = 0x04FF;
   constexpr uint16_t kBlueDark = 0x039B;
+  if (grainCount <= 0) return;
+
+  if (fabsf(gravityX) < 0.04f && gravityY < 0.04f) {
+    gravityX = 0.0f;
+    gravityY = 1.0f;
+  }
+  static TopGrainCell cells[kMaxBottomGrains];
+  int cellCount = 0;
   for (int y = kGrainMid; y < kGrainH; ++y) {
     for (int x = 0; x < kGrainW; ++x) {
-      if (!grainGrid[y][x]) continue;
+      if (!grainInside(x, y)) continue;
       const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
       const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
       if (!hourglassInsideSprite(px + 1, py + 1, kSandInset)) continue;
-      gfx.fillRect(px, py, kGrainCell, kGrainCell,
-                   ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
+      const float centerBias = -fabsf(static_cast<float>(x - kGrainCenter)) * 0.012f;
+      const float roughness = static_cast<float>((x * 13 + y * 19) % 7) * 0.01f;
+      cells[cellCount++] = {static_cast<int8_t>(x), static_cast<int8_t>(y),
+                            (x - kGrainCenter) * gravityX +
+                                (y - kGrainMid) * max(gravityY, 0.0f) +
+                                centerBias + roughness};
     }
+  }
+  std::sort(cells, cells + cellCount, [](const TopGrainCell &a, const TopGrainCell &b) {
+    return a.score > b.score;
+  });
+
+  const int drawnCount = min(grainCount, cellCount);
+  for (int i = 0; i < drawnCount; ++i) {
+    const int x = cells[i].x;
+    const int y = cells[i].y;
+    const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
+    const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
+    gfx.fillRect(px, py, kGrainCell, kGrainCell,
+                 ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
   }
 }
 
@@ -1042,7 +1064,7 @@ void drawPomodoroRun(bool force = false) {
   hourglassCanvas.fillScreen(TFT_BLACK);
   drawTopGrains(hourglassCanvas, topGrains, liquidLeanX, liquidLeanY);
   drawFallingStream(hourglassCanvas, centerX - kHourglassSpriteX, progress, liquidLeanX);
-  drawBottomGrains(hourglassCanvas);
+  drawBottomGrains(hourglassCanvas, liquidLeanX, liquidLeanY);
   drawHourglassFrame(hourglassCanvas, centerX - kHourglassSpriteX,
                      kHourglassTopY - kHourglassSpriteY,
                      kHourglassBottomY - kHourglassSpriteY);
@@ -1360,33 +1382,9 @@ void drawClock(bool force = false) {
 }
 
 void enterSelectedApp() {
-  if (menuIndex == 0) {
-    screen = Screen::Clock;
-    lastClockText = "";
-    lastClockRotation = -1;
-    drawClock(true);
-    return;
-  }
-
-  if (menuIndex == 1) {
-    screen = Screen::PomodoroMenu;
-    pomodoroMenuIndex = 0;
-    drawPomodoroMenu();
-    return;
-  }
-
-  if (menuIndex == 2) {
-    screen = Screen::Dice;
-    drawDieFace(dieValue);
-    return;
-  }
-
-  if (menuIndex == 3) {
-    enterSea();
-    return;
-  }
-
-  enterImuCal();
+  screen = Screen::PomodoroMenu;
+  pomodoroMenuIndex = 0;
+  drawPomodoroMenu();
 }
 
 void returnToMenu() {
@@ -1440,29 +1438,29 @@ void setup() {
     LOGE("pomodoro", "history init failed");
   }
   const AppSettings &settings = appConfig.settings();
-  httpClient.setBaseUrl(settings.httpBaseUrl);
-  wsClient.onText([](const String &text) {
-    LOGI("ws", "text=%s", text.c_str());
-  });
+  if (kEnableNetwork) {
+    httpClient.setBaseUrl(settings.httpBaseUrl);
+    wsClient.onText([](const String &text) {
+      LOGI("ws", "text=%s", text.c_str());
+    });
+    wifiPortal.begin(settings.deviceName);
+    timeSync.begin(settings);
+    wsClient.begin(settings.wsHost, settings.wsPort, settings.wsPath);
+  }
 
-  screen = Screen::Clock;
-  lastClockText = "";
-  lastClockRotation = -1;
-  drawClock(true);
-  wifiPortal.begin(settings.deviceName);
-  timeSync.begin(settings);
-  wsClient.begin(settings.wsHost, settings.wsPort, settings.wsPath);
-
-  lastClockText = "";
-  drawClock(true);
+  screen = Screen::PomodoroMenu;
+  pomodoroMenuIndex = 0;
+  drawPomodoroMenu();
 }
 
 void loop() {
   M5.update();
-  wifiPortal.loop();
-  timeSync.loop(wifiPortal.connected());
+  if (kEnableNetwork) {
+    wifiPortal.loop();
+    timeSync.loop(wifiPortal.connected());
+    wsClient.loop();
+  }
   battery.loop();
-  wsClient.loop();
 
   if (screen == Screen::Menu) {
     if (didShake()) {

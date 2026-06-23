@@ -13,3 +13,5 @@ Thumbs.db
 Desktop.ini
 *.tmp
 *.log
+compile_commands.json
+dist/
